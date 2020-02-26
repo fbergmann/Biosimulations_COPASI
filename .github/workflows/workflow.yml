@@ -19,7 +19,7 @@ jobs:
               id: vars
               run: echo ::set-output name=tag::$(echo ${GITHUB_REF:10})
             - name: Build and push the tagged Docker image
-              if: github.event_name == 'published'
+              if: github.event_path == 'published'
               run: |
                 docker build . --file Dockerfile --tag crbm/biosimulations_copasi_api:${{steps.vars.outputs.tag}}
                 docker push crbm/biosimulations_copasi_api:${{steps.vars.outputs.tag}}
@@ -49,12 +49,12 @@ jobs:
               with:
                 python-version: 3.8
             - name: Install requirements
-              if: github.event_path == 'master'
+              if: github.event_path == 'master' && github.event_path != 'published'
               run: |
                 python -m pip install --upgrade pip
                 pip install -r docs/requirements.txt
             - name: Create index html document
-              if: github.event_path == 'master'
+              if: github.event_path == 'master' && github.event_path != 'published'
               run: |
                 sphinx-apidoc ./ -o ./docs/source/
                 sphinx-build ./docs/source/ ./docs/html/
