@@ -9,7 +9,7 @@ on:
     release:
         types: [published]
 jobs:
-    push to dockerhub:
+    Push_to_dockerhub:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v1
@@ -23,7 +23,7 @@ jobs:
               run: |
                 docker build . --file Dockerfile --tag crbm/biosimulations_copasi_api:${{steps.vars.outputs.tag}}
                 docker push crbm/biosimulations_copasi_api:${{steps.vars.outputs.tag}}
-    docker_build_and_test:
+    Docker_build_and_test:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v1
