@@ -1,4 +1,4 @@
-name: Main Workflow
+name: Workflow
 on: 
     push:
         branches: 
@@ -9,7 +9,7 @@ on:
     release:
         types: [published]
 jobs:
-    deploy:
+    push to dockerhub:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v1
@@ -23,7 +23,7 @@ jobs:
               run: |
                 docker build . --file Dockerfile --tag crbm/biosimulations_copasi_api:${{steps.vars.outputs.tag}}
                 docker push crbm/biosimulations_copasi_api:${{steps.vars.outputs.tag}}
-    build:
+    docker_build_and_test:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@v1
@@ -40,7 +40,7 @@ jobs:
                 AUTH0_GRANT_TYPE: ${{secrets.AUTH0_GRANT_TYPE}}
                 JOBHOOK_URL: ${{secrets.JOBHOOK_URL}}
               run: docker run -v /home/runner/work/CRBM-COPASI/CRBM-COPASI/sample_model/:/usr/local/app/copasi/simulation -e JOB_ID -e SIMULATION_ID -e AUTH0_CLIENT_ID -e AUTH0_CLIENT_SECRET -e AUTH0_BIOSIMULATIONS_AUDIENCE -e AUTH0_TOKEN_URL -e AUTH0_GRANT_TYPE -e JOBHOOK_URL crbm/biosimulations_copasi_api:latest
-    document:
+    Document:
         runs-on: ubuntu-latest
         steps:
             - uses: actions/checkout@master
