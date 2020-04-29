@@ -1,8 +1,5 @@
 language: python
 
-branches:
-  only:
-    - /travis/
 python:
   - 3.7
 
