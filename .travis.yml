@@ -1,5 +1,5 @@
 language: python
-sudo: required
+
 branches:
   only:
     - /travis/
@@ -17,4 +17,4 @@ install:
   - pip install -r tests/requirements.txt
 
 script:
-  - pytest -v
+  - sudo -E env "PATH=$PATH" pytest -v
