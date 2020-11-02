@@ -12,6 +12,7 @@ import shutil
 import sys
 import tempfile
 import zipfile
+import logging
 
 import COPASI as copasi
 import libcombine
@@ -23,6 +24,100 @@ from .utils import create_time_course_report
 importlib.reload(libcombine)
 
 __all__ = ['exec_combine_archive']
+
+
+def _get_method_type(kisao_id):
+
+    methods = {
+        27: copasi.CTaskEnum.Method_stochastic,  # Gibson + Bruck
+        29: copasi.CTaskEnum.Method_directMethod,  # direct method
+        39: copasi.CTaskEnum.Method_tauLeap,  # tau leap method
+        48: copasi.CTaskEnum.Method_adaptiveSA,  # adaptive SSA + tau leap
+        88: copasi.CTaskEnum.Method_deterministic,  # LSODA
+        89: copasi.CTaskEnum.Method_deterministic,  # LSODAR
+        # TODO: add when/if in KISAO
+        # x1: copasi.CTaskEnum.Method_RADAU5,  # RADAU5
+        # x2: copasi.CTaskEnum.Method_hybrid,  # hybrid (runge kutta)
+        # x3: copasi.CTaskEnum.Method_hybridLSODA,  # hybrid (lsoda)
+        # x4: copasi.CTaskEnum.Method_hybridODE45,  # hybrid (RK-45)
+        # x5: copasi.CTaskEnum.stochasticRunkeKuttaRI5,  # SDE Solve (RI5)
+    }
+
+    method_type = methods.get(kisao_id, -1)
+    if method_type == -1:
+        method_type = copasi.CTaskEnum.Method_deterministic
+        logging.warning('no implementation for KISAO:{0:07d}, selecting LSODAR'.format(kisao_id))
+    return method_type
+
+
+def _set_method_parameter(method, kisao_id, value):
+    # type: (copasi.CCopasiMethod, int, str) -> None
+    parameter_names = {
+        209: ('Relative Tolerance', 'float'),
+        211: ('Absolute Tolerance', 'float'),
+        216: ('Integrate Reduced Model', 'bool'),
+        415: ('Max Internal Steps', 'int'),
+        467: ('Max Internal Step Size', 'int'),
+        488: ('Random Seed', 'float'),
+        228: ('Epsilon', 'float'),
+        203: ('Lower Limit', 'int'),
+        204: ('Upper Limit', 'int'),
+        205: ('Partitioning Interval', 'int'),
+        483: (['Runge Kutta Stepsize', 'Internal Steps Size'], 'float')
+        # TODO: add when/if kisao has them
+        # xxx: ('Initial Step Size', 'float')
+        # xxx: ('Tolerance for Root Finder', 'float')
+        # xxx: ('Subtype', 'int')
+        # xxx: ('Force Physical Correctness', 'bool')
+
+    }
+
+    name, p_type = parameter_names.get(kisao_id, (None, None))
+    if name is None:
+        logging.warning('no supported algorithm parameter for KISAO:{0:07d}'.format(kisao_id))
+        return
+
+    if type(name) is str:
+        param = method.getParameter(name)
+    elif type(name) is list:
+        for n in name:
+            param = method.getParameter(n)
+            if param is not None:
+                break
+
+    if param is None:
+        logging.warning('parameter "{0}" is not supported on method "{1}"'.format(name, method.getObjectName()))
+        return
+
+    assert (isinstance(param, copasi.CCopasiParameter))
+    if p_type == 'float':
+        param.setDblValue(float(value))
+    elif p_type == 'int':
+        param.setIntValue(int(value))
+    elif p_type == 'bool':
+        param.setBoolValue(value == 'true' or value == '1')
+
+    # if we did set the seed, we should turn on the flag to use it
+    if kisao_id == 488:
+        param = method.getParameter('Use Random Seed')
+        if param is not None:
+            param.setBoolValue(True)
+
+
+def update_timecourse_from_simulation(data_model, current_sim):
+    task = data_model.getTask('Time-Course')
+    assert (isinstance(task, copasi.CTrajectoryTask))
+    algorithm = current_sim.getAlgorithm()
+    assert (isinstance(algorithm, libsedml.SedAlgorithm))
+    if algorithm is None:
+        return
+
+    task.setMethodType(_get_method_type(algorithm.getKisaoIDasInt()))
+    method = task.getMethod()
+    for i in range(algorithm.getNumAlgorithmParameters()):
+        current = algorithm.getAlgorithmParameter(i)
+        assert (isinstance(current, libsedml.SedAlgorithmParameter))
+        _set_method_parameter(method, current.getKisaoIDasInt(), current.getValue())
 
 
 def exec_combine_archive(archive_file, out_dir):
@@ -75,16 +170,16 @@ def exec_combine_archive(archive_file, out_dir):
             task_name_list = [task.getId() for task in tasks]
 
             for sim in range(0, sedml_doc.getNumSimulations()):
-                current_doc = sedml_doc.getSimulation(sim)
-                if current_doc.getTypeCode() == libsedml.SEDML_SIMULATION_UNIFORMTIMECOURSE:
-                    tc = current_doc
-                    if current_doc.isSetAlgorithm():
-                        kisao_id = current_doc.getAlgorithm().getKisaoID()
+                current_sim = sedml_doc.getSimulation(sim)
+                if current_sim.getTypeCode() == libsedml.SEDML_SIMULATION_UNIFORMTIMECOURSE:
+                    tc = current_sim
+                    if current_sim.isSetAlgorithm():
+                        kisao_id = current_sim.getAlgorithm().getKisaoID()
                         print("timeCourseID={}, outputStartTime={}, outputEndTime={}, numberOfPoints={}, kisaoID={} " \
                               .format(tc.getId(), tc.getOutputStartTime(), tc.getOutputEndTime(),
                                       tc.getNumberOfPoints(), kisao_id))
                 else:
-                    print(f"Encountered unknown simulation {current_doc.getId()}")
+                    print(f"Encountered unknown simulation {current_sim.getId()}")
 
             if not os.path.isdir(sedml_out_dir):
                 os.makedirs(sedml_out_dir)
@@ -97,6 +192,9 @@ def exec_combine_archive(archive_file, out_dir):
 
             # the sedml_importer will only import one time course task
             data_model.importSEDML(sedml_path)
+
+            # update time course task from KISAO description of simulation
+            update_timecourse_from_simulation(data_model, current_sim)
 
             report = create_time_course_report(data_model)
 
